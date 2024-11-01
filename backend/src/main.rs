@@ -6,15 +6,9 @@ use log::{error, info};
 use log4rs;
 use std::env;
 use std::sync::Arc;
-// use std::process::Command;
-
-use db::DbPool;
 
 pub mod db;
 pub mod routes;
-pub mod schema;
-pub mod scripts;
-pub mod services;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -31,18 +25,26 @@ async fn main() -> std::io::Result<()> {
 
     info!("Starting application");
 
-    let pool: DbPool = db::init_pool();
-    let arc_pool = Arc::new(pool.clone());
-
-    scripts::migrate::migrate_data()
-        .await
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    // Initialize SurrealDB connection
+    let db = match db::init_surrealdb().await {
+        Ok(db) => {
+            info!("Successfully connected to SurrealDB");
+            Arc::new(db)
+        }
+        Err(e) => {
+            error!("Failed to connect to SurrealDB: {}", e);
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Failed to initialize database",
+            ));
+        }
+    };
 
     // Start the server
     info!("Server listening on 127.0.0.1:3000");
     HttpServer::new(move || {
         App::new()
-            .app_data(web::Data::new(arc_pool.clone()))
+            .app_data(web::Data::new(db.clone()))
             .wrap(Logger::default())
             .wrap(Cors::permissive())
             .configure(routes::init_routes)

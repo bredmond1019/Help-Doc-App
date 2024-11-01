@@ -1,9 +1,8 @@
 use chrono::{DateTime, Utc};
-use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-#[derive(Debug, Serialize, Deserialize, Queryable)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ChatSession {
     pub id: Uuid,
     pub created_at: DateTime<Utc>,
@@ -11,7 +10,7 @@ pub struct ChatSession {
     pub context: serde_json::Value,
 }
 
-#[derive(Debug, Serialize, Deserialize, Queryable)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ChatMessage {
     pub id: Uuid,
     pub session_id: Uuid,

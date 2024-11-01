@@ -1,31 +1,102 @@
 // File: src/db/mod.rs
-
+use serde::Deserialize;
 use std::env;
-
-use diesel::r2d2::{self, ConnectionManager, Pool};
-use diesel::RunQueryDsl;
-use diesel::{sql_query, PgConnection};
+use surrealdb::engine::remote::ws::{Client, Ws};
+use surrealdb::opt::auth::Root;
+use surrealdb::{Error as SurrealError, RecordId, Surreal};
+use tokio::sync::OnceCell;
 
 pub mod models;
-pub mod surrealdb;
 
-pub use self::models::*;
+static DB: OnceCell<Surreal<Client>> = OnceCell::const_new();
 
-pub type DbPool = Pool<ConnectionManager<PgConnection>>;
-
-pub fn init_pool() -> DbPool {
-    let database_url: String = get_database_url();
-    let manager = ConnectionManager::<PgConnection>::new(database_url);
-    r2d2::Pool::builder()
-        .build(manager)
-        .expect("Failed to create pool.")
+#[derive(Debug, Deserialize)]
+pub struct Record {
+    id: RecordId,
 }
 
-pub fn get_database_url() -> String {
-    env::var("DATABASE_URL").expect("DATABASE_URL must be set")
+pub async fn init_surrealdb() -> Result<&'static Surreal<Client>, SurrealError> {
+    DB.get_or_try_init(|| async {
+        let url = env::var("SURREALDB_URL").unwrap_or_else(|_| "127.0.0.1:8000".to_string());
+        let username = env::var("SURREALDB_USER").unwrap_or_else(|_| "root".to_string());
+        let password = env::var("SURREALDB_PASS").unwrap_or_else(|_| "root".to_string());
+
+        let db = Surreal::new::<Ws>(url).await?;
+        db.signin(Root {
+            username: &username,
+            password: &password,
+        })
+        .await?;
+
+        db.use_ns("healthtech").use_db("helpdocs").await?;
+        Ok(db)
+    })
+    .await
 }
 
-pub fn clear_all_tables(conn: &mut PgConnection) -> Result<(), diesel::result::Error> {
-    sql_query("TRUNCATE TABLE articles, collections CASCADE").execute(conn)?;
+pub async fn setup_schema() -> Result<(), SurrealError> {
+    let db = init_surrealdb().await?;
+
+    // Define table for articles
+    db.query("DEFINE TABLE articles SCHEMAFULL").await?;
+    db.query("DEFINE TABLE collections SCHEMAFULL").await?;
+
+    // Define fields for articles
+    db.query(
+        r#"
+      -- Define the articles table
+      DEFINE TABLE articles SCHEMAFULL;
+      
+      -- Define fields
+      DEFINE FIELD title ON TABLE articles TYPE string;
+      DEFINE FIELD content ON TABLE articles TYPE string;
+      DEFINE FIELD slug ON TABLE articles TYPE string;
+      DEFINE FIELD categories ON TABLE articles TYPE array;
+      DEFINE FIELD created_at ON TABLE articles TYPE datetime DEFAULT time::now();
+      DEFINE FIELD updated_at ON TABLE articles TYPE datetime DEFAULT time::now();
+  "#,
+    )
+    .await?;
+
+    // Define table for processed articles
+    db.query("DEFINE TABLE processed_articles SCHEMAFULL")
+        .await?;
+
+    // Define fields for processed articles
+    db.query(
+        r#"
+        DEFINE FIELD article ON TABLE processed_articles TYPE record;
+        DEFINE FIELD summary ON TABLE processed_articles TYPE string;
+        DEFINE FIELD key_points ON TABLE processed_articles TYPE array;
+        DEFINE FIELD keywords ON TABLE processed_articles TYPE array;
+        DEFINE FIELD semantic_chunks ON TABLE processed_articles TYPE array;
+        DEFINE FIELD embeddings ON TABLE processed_articles TYPE array;
+        DEFINE FIELD categories ON TABLE processed_articles TYPE array;
+        DEFINE FIELD created_at ON TABLE processed_articles TYPE datetime DEFAULT time::now();
+        DEFINE FIELD updated_at ON TABLE processed_articles TYPE datetime DEFAULT time::now();
+    "#,
+    )
+    .await?;
+
+    // Define fields for collections
+    db.query(
+        r#"
+      -- Define the collections table
+      DEFINE TABLE collections SCHEMAFULL;
+      
+      -- Define fields
+      DEFINE FIELD name ON TABLE collections TYPE string;
+      DEFINE FIELD description ON TABLE collections TYPE string;
+      DEFINE FIELD slug ON TABLE collections TYPE string;
+      DEFINE FIELD helpscout_collection_id ON TABLE collections TYPE string;
+      DEFINE FIELD paragraph_description ON TABLE collections TYPE option<string>;
+      DEFINE FIELD bullet_points ON TABLE collections TYPE option<string>;
+      DEFINE FIELD keywords ON TABLE collections TYPE option<string>;
+      DEFINE FIELD created_at ON TABLE collections TYPE datetime DEFAULT time::now();
+      DEFINE FIELD updated_at ON TABLE collections TYPE datetime DEFAULT time::now();
+  "#,
+    )
+    .await?;
+
     Ok(())
 }
