@@ -39,7 +39,6 @@ pub async fn setup_schema() -> Result<(), SurrealError> {
 
     // Define table for articles
     db.query("DEFINE TABLE articles SCHEMAFULL").await?;
-    db.query("DEFINE TABLE collections SCHEMAFULL").await?;
 
     // Define fields for articles
     db.query(
@@ -65,18 +64,46 @@ pub async fn setup_schema() -> Result<(), SurrealError> {
     // Define fields for processed articles
     db.query(
         r#"
-        DEFINE FIELD article ON TABLE processed_articles TYPE record;
+        DEFINE FIELD article ON TABLE processed_articles TYPE record ASSERT $value != NONE;
         DEFINE FIELD summary ON TABLE processed_articles TYPE string;
-        DEFINE FIELD key_points ON TABLE processed_articles TYPE array;
+        DEFINE FIELD bullet_points ON TABLE processed_articles TYPE array;
         DEFINE FIELD keywords ON TABLE processed_articles TYPE array;
         DEFINE FIELD semantic_chunks ON TABLE processed_articles TYPE array;
-        DEFINE FIELD embeddings ON TABLE processed_articles TYPE array;
+        DEFINE FIELD summary_embedding ON TABLE processed_articles TYPE array;
+        DEFINE FIELD bullet_point_embeddings ON TABLE processed_articles TYPE array;
         DEFINE FIELD categories ON TABLE processed_articles TYPE array;
         DEFINE FIELD created_at ON TABLE processed_articles TYPE datetime DEFAULT time::now();
         DEFINE FIELD updated_at ON TABLE processed_articles TYPE datetime DEFAULT time::now();
+
+         -- Create vector indexes
+        DEFINE INDEX idx_summary_embedding ON TABLE processed_articles FIELD summary_embedding VECTOR 384 COSINE;
+        DEFINE INDEX idx_keyword_embedding ON TABLE processed_articles FIELD keyword_embedding VECTOR 384 COSINE;
     "#,
     )
     .await?;
+
+    // Define table for bullet point embeddings
+    db.query(
+        "DEFINE TABLE bullet_point_embeddings SCHEMAFULL;
+         DEFINE FIELD article ON TABLE bullet_point_embeddings TYPE record ASSERT $value != NONE;
+         DEFINE FIELD bullet_point_index ON TABLE bullet_point_embeddings TYPE number;
+         DEFINE FIELD embedding ON TABLE bullet_point_embeddings TYPE array;
+         
+         -- Create vector index on the embedding field
+         DEFINE INDEX idx_bulletpoint_embedding 
+         ON TABLE bullet_point_embeddings 
+         FIELD embedding 
+         VECTOR 384 COSINE;
+         
+         -- Create regular index on article_id for fast lookups
+         DEFINE INDEX idx_article_id 
+         ON TABLE bullet_point_embeddings 
+         FIELD article;",
+    )
+    .await?;
+
+    // Define table for collections
+    db.query("DEFINE TABLE collections SCHEMAFULL").await?;
 
     // Define fields for collections
     db.query(

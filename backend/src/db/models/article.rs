@@ -15,7 +15,7 @@ pub struct Article {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct NewArticle {
-    pub id: String,
+    pub id: Uuid,
     pub title: String,
     pub content: String,
     pub slug: String,
@@ -24,11 +24,19 @@ pub struct NewArticle {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ProcessedArticle {
-    pub article_id: String,
+    pub article_id: Uuid,
     pub summary: String,
-    pub key_points: Vec<String>,
+    pub summary_embedding: Vec<f32>,
+    pub bullet_points: Vec<String>,
     pub keywords: Vec<String>,
+    pub keyword_embedding: Vec<f32>,
     pub semantic_chunks: Vec<String>,
-    pub embeddings: Vec<f32>,
     pub categories: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BulletPointEmbedding {
+    pub article_id: Uuid,
+    pub key_point_index: usize,
+    pub embedding: Vec<f32>,
 }
